@@ -17,7 +17,7 @@ with open('./requirements.txt', 'r', encoding='utf-8') as fin:
 
 setup(
     name="fastapi_microsoft_identity",
-    version="0.1.0",
+    version="0.1.1",
     url="https://github.com/425Show/fastapi_microsoft_identity",
     license='MIT',
 
@@ -25,7 +25,8 @@ setup(
     author_email="christos.matskas@microsoft.com",
 
     description="Azure AD authentication for Fast API",
-    long_description=read("README.rst"),
+    long_description=read("README.md"),
+    long_description_content_type="text/markdown",
 
     packages=find_packages(exclude=('tests',)),
 
@@ -38,6 +39,7 @@ setup(
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9'
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10'
     ],
 )
