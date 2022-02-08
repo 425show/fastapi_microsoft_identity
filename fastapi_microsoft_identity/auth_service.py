@@ -7,11 +7,19 @@ import fastapi
 
 tenant_id=None
 client_id=None
+b2c_policy_name = None
+b2c_domain_name = None
 
-def initialize(tenant_id_, client_id_):
-    global tenant_id, client_id
+def initialize(
+    tenant_id_, 
+    client_id_,
+    b2c_policy_name_=None, 
+    b2c_domain_name_=None):
+    global tenant_id, client_id, b2c_policy_name, b2c_domain_name
     tenant_id = tenant_id_
     client_id = client_id_
+    b2c_policy_name = b2c_policy_name_
+    b2c_domain_name = b2c_domain_name_
 
 class AuthError(Exception):
     def __init__(self, error_msg:str, status_code:int):
@@ -44,7 +52,7 @@ def validate_scope(required_scope:str, request: Request):
     if unverified_claims.get("scp"):
             token_scopes = unverified_claims["scp"].split()
             for token_scope in token_scopes:
-                if token_scope == required_scope:
+                if token_scope.lower() == required_scope.lower():
                     has_valid_scope = True
     else:
         raise AuthError("IDW10201: Neither scope or roles claim was found in the bearer token", 403)
@@ -79,22 +87,56 @@ def requires_auth(f):
             return fastapi.Response(content="Invalid_header: Unable to parse authentication", status_code= 401)
         if rsa_key:
             token_version = __get_token_version(token)
-            if token_version == "1.0":
-                __decode_JWT_v1(token, rsa_key, client_id, tenant_id)
-            else:
-                __decode_JWT_v2(token, rsa_key, client_id, tenant_id)
+            __decode_JWT(token_version, token, rsa_key)
             return await f(*args, **kwargs)
         return fastapi.Response(content="Invalid header error: Unable to find appropriate key", status_code=401)
     return decorated
 
-def __decode_JWT_v1(token, rsa_key, audience:str, tenandId:str):
+def requires_b2c_auth(f):
+    @wraps(f)
+    async def decorated(*args, **kwargs):
+        try:
+            token = get_token_auth_header(kwargs["request"])
+            url = f'https://{b2c_domain_name}.b2clogin.com/{b2c_domain_name}.onmicrosoft.com/{b2c_policy_name}/discovery/v2.0/keys'
+            
+            async with httpx.AsyncClient() as client:
+                resp: Response = await client.get(url)
+                if resp.status_code != 200:
+                    raise AuthError("Problem with Azure AD discovery URL", status_code=404)
+
+                jwks = resp.json()
+                unverified_header = jwt.get_unverified_header(token)
+                rsa_key = {}
+                for key in jwks["keys"]:
+                    if key["kid"] == unverified_header["kid"]:
+                        rsa_key = {
+                            "kid": key["kid"],
+                            "kty": key["kty"],
+                            "n": key["n"],
+                            "e": key["e"],
+                            "nbf": key["nbf"]
+                        }
+        except Exception:
+            return fastapi.Response(content="Invalid_header: Unable to parse authentication", status_code= 401)
+        if rsa_key:
+            token_version = __get_token_version(token)
+            __decode_B2C_JWT(token_version, token, rsa_key)
+            return await f(*args, **kwargs)
+        return fastapi.Response(content="Invalid header error: Unable to find appropriate key", status_code=401)
+    return decorated
+
+def __decode_B2C_JWT(token_version, token, rsa_key):
+    if token_version == "1.0":
+        _issuer = f'https://{b2c_domain_name}.b2clogin.com/tfp/{tenant_id}/{b2c_policy_name}/v2.0/'.lower()
+    else:
+        _issuer = f'https://{b2c_domain_name}.b2clogin.com/{tenant_id}/v2.0'.lower()
     try:
         payload = jwt.decode(
             token,
             rsa_key,
             algorithms=["RS256"],
-            audience=f'api://{audience}',
-            issuer=f'https://sts.windows.net/{tenandId}/'
+            audience=client_id,
+            issuer=_issuer
         )
     except jwt.ExpiredSignatureError:
         raise AuthError("Token error: The token has expired", 401)
@@ -103,14 +145,20 @@ def __decode_JWT_v1(token, rsa_key, audience:str, tenandId:str):
     except Exception:
         raise AuthError("Token error: Unable to parse authentication", 401)
 
-def __decode_JWT_v2(token, rsa_key, audience:str, tenandId:str):
+def __decode_JWT(token_version, token, rsa_key):
+    if token_version == "1.0":
+        _issuer = f'https://sts.windows.net/{tenant_id}/'
+        _audience=f'api://{client_id}'
+    else:
+        _issuer = f'https://login.microsoftonline.com/{tenant_id}/v2.0'
+        _audience=f'{client_id}'
     try:
         payload = jwt.decode(
             token,
             rsa_key,
             algorithms=["RS256"],
-            audience=audience,
-            issuer=f'https://login.microsoftonline.com/{tenandId}/v2.0'
+            audience=_audience,
+            issuer=_issuer
         )
     except jwt.ExpiredSignatureError:
         raise AuthError("Token error: The token has expired", 401)
