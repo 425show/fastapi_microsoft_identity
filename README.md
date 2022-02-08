@@ -65,14 +65,14 @@ async def weather(request: Request, loc: Location = Depends(), units: Optional[s
     except Exception as x:
         return fastapi.Response(content=str(x), status_code=500)
 ```
-The `requires_auth` decorator will check the JWT Access Token a valid token the  and raise an `AuthError` (HTTP 401) if the token is invalid (expired, not right audience etc).
+The `requires_auth` decorator will check if the JWT Access Token in the request is a valid token and then raise an `AuthError` (HTTP 401) if the token is invalid (expired, not right audience etc).
 
-The library also provides a `validate_scope` function that can be used to validate the scope of the JWT token.
+The library also provides a helper function: `validate_scope` that can be used to validate the scope of the JWT token.
 
 ```
 validate_scope(expected_scope, request)
 ```
-`validate_scope` will raise an `AuthError` (HTTP 403) if the token is doesn't have the right scope / api permission).
+The `validate_scope` method will throw an `AuthError` (HTTP 403) if the token doesn't contain the right scope / api permission.
 
 Compatibility
 -------------
