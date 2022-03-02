@@ -45,19 +45,32 @@ def get_token_auth_header(request: Request):
     token = parts[1]
     return token
 
-def validate_scope(required_scope:str, request: Request):
+def validate_scope(required_scope:str, request: Request, is_app_permission:bool = False,):
     has_valid_scope = False
     token = get_token_auth_header(request);
     unverified_claims = jwt.get_unverified_claims(token)
-    if unverified_claims.get("scp"):
+    if is_app_permission:
+        if unverified_claims["roles"]:
+            for scope in unverified_claims["roles"]:
+                if scope == required_scope:
+                    has_valid_scope = True
+
+        else:
+            raise AuthError("IDW10201: No app permissions (role) claim in the bearer token", 403)
+    else:
+        if unverified_claims.get("scp"):
             token_scopes = unverified_claims["scp"].split()
             for token_scope in token_scopes:
                 if token_scope.lower() == required_scope.lower():
                     has_valid_scope = True
-    else:
-        raise AuthError("IDW10201: Neither scope or roles claim was found in the bearer token", 403)
-    if not has_valid_scope:
-        raise AuthError(f'IDW10203: The "scope" or "scp" claim does not contain scopes {required_scope} or was not found', 403)                
+        else:
+            raise AuthError("IDW10201: No scope claim was found in the bearer token", 403)
+
+    if is_app_permission and not has_valid_scope:
+        raise AuthError(f'IDW10203: The "role" claim does not contain role {required_scope} or was not found', 403)
+    elif not has_valid_scope:
+        raise AuthError(f'IDW10203: The "scope" or "scp" claim does not contain scopes {required_scope} or was not found', 403) 
+        
 
 def requires_auth(f):
     @wraps(f)
