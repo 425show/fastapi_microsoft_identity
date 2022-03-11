@@ -2,7 +2,13 @@
 import pytest
 from fastapi import Request
 import sys
-sys.path.insert(0, "../")
+import os
+
+container_folder = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), '..'
+))
+sys.path.insert(0, container_folder)
+
 from fastapi_microsoft_identity import auth_service, AuthError
 from multidict import MultiDict
 
