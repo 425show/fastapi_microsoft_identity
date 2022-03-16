@@ -139,14 +139,16 @@ The `requires_auth` decorator will check if the JWT Access Token in the request 
 The library also provides a helper function: `validate_scope` that can be used to validate the scope of the JWT token.
 
 ```
-validate_scope(expected_scope, request, is_app_permission)
+validate_scope(expected_scope, request)
 ```
-The `validate_scope` method takes 3 parameters, one of which is optional and defaults to False:
+The `validate_scope` method takes 2 parameters:
 - expected_scope: The scope that the token should have (this can also be an app permission).
 - request: The FastAPI Request object.
-- is_app_permission: identifies if the token contains a user or application permission (defaults to False).
 
-The method will throw an `AuthError` (HTTP 403) if the token doesn't contain the right scope / api permission.
+The method works out wether the access token contain an app permission (role) or a scope and then validate the claim.
+If neither is present, the method throws an `AuthError` (HTTP 403) for the following reasons:
+1. no `roles` or `scp` claim was present in the token
+2. the token doesn't contain the right scope / api permission
 
 
 Compatibility

@@ -38,7 +38,7 @@ def test_can_find_user_scope():
     headers_with_auth = MultiDict([("Authorization", f'Bearer {user_token}'), ("Content-Type", "application/json")])
     request = Request
     request.headers = headers_with_auth
-    auth_service.validate_scope(expected_scope,request,False)
+    auth_service.validate_scope(expected_scope,request)
 
 def test_can_find_user_scope_but_is_wrong():
     expected_scope = "access_as_user2"
@@ -46,7 +46,7 @@ def test_can_find_user_scope_but_is_wrong():
     request = Request
     request.headers = headers_with_auth
     with pytest.raises(AuthError) as e:
-        auth_service.validate_scope(expected_scope,request,False)
+        auth_service.validate_scope(expected_scope,request)
     assert "IDW10203" in e.value.error_msg
 
 def test_can_find_application_role():
@@ -54,7 +54,7 @@ def test_can_find_application_role():
     headers_with_auth = MultiDict([("Authorization", f'Bearer {application_token}'), ("Content-Type", "application/json")])
     request = Request
     request.headers = headers_with_auth
-    auth_service.validate_scope(expected_scope,request,True)
+    auth_service.validate_scope(expected_scope,request)
 
 def test_can_find_application_role_but_is_wrong():
     expected_scope = "access_as_user"
@@ -62,5 +62,5 @@ def test_can_find_application_role_but_is_wrong():
     request = Request
     request.headers = headers_with_auth
     with pytest.raises(AuthError) as e:
-        auth_service.validate_scope(expected_scope,request,True)
+        auth_service.validate_scope(expected_scope,request)
     assert "IDW10203" in e.value.error_msg

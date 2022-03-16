@@ -45,27 +45,35 @@ def get_token_auth_header(request: Request):
     token = parts[1]
     return token
 
-def validate_scope(required_scope:str, request: Request, is_app_permission:bool = False,):
+def validate_scope(required_scope:str, request: Request):
     has_valid_scope = False
     token = get_token_auth_header(request);
     unverified_claims = jwt.get_unverified_claims(token)
-    if is_app_permission:
-        if unverified_claims["roles"]:
-            for scope in unverified_claims["roles"]:
-                if scope == required_scope:
-                    has_valid_scope = True
+    ## check to ensure that either a valid scope or a role is present in the token
+    if unverified_claims.get("scp") is None and unverified_claims.get("roles") is None:
+        raise AuthError("IDW10201: No scope or app permission (role) claim was found in the bearer token", 403)
 
+    is_app_permission = True if unverified_claims.get("roles") is not None else False
+
+    if is_app_permission:
+        if unverified_claims.get("roles"):
+            # the roles claim is an array
+            for scope in unverified_claims["roles"]:
+                if scope.lower() == required_scope.lower():
+                    has_valid_scope = True
         else:
-            raise AuthError("IDW10201: No app permissions (role) claim in the bearer token", 403)
+            raise AuthError("IDW10201: No app permissions (role) claim was found in the bearer token", 403)
     else:
         if unverified_claims.get("scp"):
+            # the scp claim is a space delimited string
             token_scopes = unverified_claims["scp"].split()
             for token_scope in token_scopes:
                 if token_scope.lower() == required_scope.lower():
                     has_valid_scope = True
         else:
             raise AuthError("IDW10201: No scope claim was found in the bearer token", 403)
-
+   
+        
     if is_app_permission and not has_valid_scope:
         raise AuthError(f'IDW10203: The "role" claim does not contain role {required_scope} or was not found', 403)
     elif not has_valid_scope:
