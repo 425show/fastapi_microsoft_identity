@@ -3,49 +3,58 @@ from httpx import Response
 from fastapi import Request
 from functools import wraps
 from jose import jwt
+from starlette import status
 import fastapi
 
-tenant_id=None
-client_id=None
+tenant_id = None
+client_id = None
 b2c_policy_name = None
 b2c_domain_name = None
 
+
 def initialize(
-    tenant_id_, 
-    client_id_,
-    b2c_policy_name_=None, 
-    b2c_domain_name_=None):
+        tenant_id_,
+        client_id_,
+        b2c_policy_name_=None,
+        b2c_domain_name_=None):
     global tenant_id, client_id, b2c_policy_name, b2c_domain_name
     tenant_id = tenant_id_
     client_id = client_id_
     b2c_policy_name = b2c_policy_name_
     b2c_domain_name = b2c_domain_name_
 
+
 class AuthError(Exception):
-    def __init__(self, error_msg:str, status_code:int):
+    def __init__(self, error_msg: str, status_code: int):
         super().__init__(error_msg)
 
         self.error_msg = error_msg
         self.status_code = status_code
 
+
 def get_token_auth_header(request: Request):
-    auth = request.headers.get("Authorization", None)
+    auth = request.cookies.get("Authorization")
     if not auth:
-        raise AuthError("Authentication error: Authorization header is missing", 401)
+        raise fastapi.HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                    detail="Authentication error: Authorization header is missing")
 
     parts = auth.split()
 
     if parts[0].lower() != "bearer":
-        raise AuthError("Authentication error: Authorization header must start with ' Bearer'", 401)
+        raise fastapi.HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                    detail="Authentication error: Authorization header must start with ' Bearer'")
     elif len(parts) == 1:
-        raise AuthError("Authentication error: Token not found", 401)
+        raise fastapi.HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                    detail="Authentication error: Token not found")
     elif len(parts) > 2:
-        raise AuthError("Authentication error: Authorization header must be 'Bearer <token>'", 401)
+        raise fastapi.HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                    detail="Authentication error: Authorization header must be 'Bearer <token>'")
 
     token = parts[1]
     return token
 
-def validate_scope(required_scope:str, request: Request):
+
+def validate_scope(required_scope: str, request: Request):
     has_valid_scope = False
     token = get_token_auth_header(request);
     unverified_claims = jwt.get_unverified_claims(token)
@@ -72,13 +81,13 @@ def validate_scope(required_scope:str, request: Request):
                     has_valid_scope = True
         else:
             raise AuthError("IDW10201: No scope claim was found in the bearer token", 403)
-   
-        
+
     if is_app_permission and not has_valid_scope:
         raise AuthError(f'IDW10203: The "role" claim does not contain role {required_scope} or was not found', 403)
     elif not has_valid_scope:
-        raise AuthError(f'IDW10203: The "scope" or "scp" claim does not contain scopes {required_scope} or was not found', 403) 
-        
+        raise AuthError(
+            f'IDW10203: The "scope" or "scp" claim does not contain scopes {required_scope} or was not found', 403)
+
 
 def requires_auth(f):
     @wraps(f)
@@ -86,11 +95,12 @@ def requires_auth(f):
         try:
             token = get_token_auth_header(kwargs["request"])
             url = f'https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys'
-            
+
             async with httpx.AsyncClient() as client:
                 resp: Response = await client.get(url)
                 if resp.status_code != 200:
-                    raise AuthError("Problem with Azure AD discovery URL", status_code=404)
+                    raise fastapi.HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                                detail="Problem with Azure AD discovery URL")
 
                 jwks = resp.json()
                 unverified_header = jwt.get_unverified_header(token)
@@ -105,13 +115,16 @@ def requires_auth(f):
                             "e": key["e"]
                         }
         except Exception:
-            return fastapi.Response(content="Invalid_header: Unable to parse authentication", status_code= 401)
+            raise fastapi.HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                        detail="Not authenticated, please login!")
         if rsa_key:
             token_version = __get_token_version(token)
             __decode_JWT(token_version, token, rsa_key)
             return await f(*args, **kwargs)
         return fastapi.Response(content="Invalid header error: Unable to find appropriate key", status_code=401)
+
     return decorated
+
 
 def requires_b2c_auth(f):
     @wraps(f)
@@ -119,7 +132,7 @@ def requires_b2c_auth(f):
         try:
             token = get_token_auth_header(kwargs["request"])
             url = f'https://{b2c_domain_name}.b2clogin.com/{b2c_domain_name}.onmicrosoft.com/{b2c_policy_name}/discovery/v2.0/keys'
-            
+
             async with httpx.AsyncClient() as client:
                 resp: Response = await client.get(url)
                 if resp.status_code != 200:
@@ -138,13 +151,15 @@ def requires_b2c_auth(f):
                             "nbf": key["nbf"]
                         }
         except Exception:
-            return fastapi.Response(content="Invalid_header: Unable to parse authentication", status_code= 401)
+            return fastapi.Response(content="Invalid_header: Unable to parse authentication", status_code=401)
         if rsa_key:
             token_version = __get_token_version(token)
             __decode_B2C_JWT(token_version, token, rsa_key)
             return await f(*args, **kwargs)
         return fastapi.Response(content="Invalid header error: Unable to find appropriate key", status_code=401)
+
     return decorated
+
 
 def __decode_B2C_JWT(token_version, token, rsa_key):
     if token_version == "1.0":
@@ -166,13 +181,14 @@ def __decode_B2C_JWT(token_version, token, rsa_key):
     except Exception:
         raise AuthError("Token error: Unable to parse authentication", 401)
 
+
 def __decode_JWT(token_version, token, rsa_key):
     if token_version == "1.0":
         _issuer = f'https://sts.windows.net/{tenant_id}/'
-        _audience=f'api://{client_id}'
+        _audience = f'api://{client_id}'
     else:
         _issuer = f'https://login.microsoftonline.com/{tenant_id}/v2.0'
-        _audience=f'{client_id}'
+        _audience = f'{client_id}'
     try:
         payload = jwt.decode(
             token,
@@ -188,9 +204,10 @@ def __decode_JWT(token_version, token, rsa_key):
     except Exception:
         raise AuthError("Token error: Unable to parse authentication", 401)
 
+
 def __get_token_version(token):
     unverified_claims = jwt.get_unverified_claims(token)
     if unverified_claims.get("ver"):
-        return unverified_claims["ver"]   
+        return unverified_claims["ver"]
     else:
         raise AuthError("Missing version claim from token. Unable to validate", 403)
