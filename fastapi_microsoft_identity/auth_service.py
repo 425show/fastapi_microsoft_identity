@@ -79,6 +79,7 @@ def validate_scope(required_scope:str, request: Request):
     elif not has_valid_scope:
         raise AuthError(f'IDW10203: The "scope" or "scp" claim does not contain scopes {required_scope} or was not found', 403) 
         
+    return unverified_claims
 
 def requires_auth(f):
     @wraps(f)
