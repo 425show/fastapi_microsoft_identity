@@ -45,6 +45,11 @@ def get_token_auth_header(request: Request):
     token = parts[1]
     return token
 
+def get_token_claims(request: Request):
+    token = get_token_auth_header(request)
+    unverified_claims = jwt.get_unverified_claims(token)
+    return unverified_claims 
+
 def validate_scope(required_scope:str, request: Request):
     has_valid_scope = False
     token = get_token_auth_header(request);

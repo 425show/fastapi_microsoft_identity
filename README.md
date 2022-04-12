@@ -78,6 +78,14 @@ validate_scope(expected_scope, request)
 ```
 The `validate_scope` method will throw an `AuthError` (HTTP 403) if the token doesn't contain the right scope / api permission.
 
+### 1.3 Accessing the token claims
+Based on user feedback, the library now provides a helper function to access the token claims.
+
+```
+token_claims = authservice.get_token_claims(request)
+# do something with the claims
+```
+
 ## 2. Azure AD B2C Authentication
 
 ### 2.1 Create your Azure AD B2C Application Registration
