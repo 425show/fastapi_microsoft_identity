@@ -112,9 +112,12 @@ def requires_auth(f):
         except Exception:
             return fastapi.Response(content="Invalid_header: Unable to parse authentication", status_code= 401)
         if rsa_key:
-            token_version = __get_token_version(token)
-            __decode_JWT(token_version, token, rsa_key)
-            return await f(*args, **kwargs)
+            try :
+                token_version = __get_token_version(token)
+                __decode_JWT(token_version, token, rsa_key)
+                return await f(*args, **kwargs)
+            except AuthError as auth_err:
+                fastapi.Response(content=auth_err.error_msg, status_code=auth_err.status_code)
         return fastapi.Response(content="Invalid header error: Unable to find appropriate key", status_code=401)
     return decorated
 
@@ -145,9 +148,12 @@ def requires_b2c_auth(f):
         except Exception:
             return fastapi.Response(content="Invalid_header: Unable to parse authentication", status_code= 401)
         if rsa_key:
-            token_version = __get_token_version(token)
-            __decode_B2C_JWT(token_version, token, rsa_key)
-            return await f(*args, **kwargs)
+            try:
+                token_version = __get_token_version(token)
+                __decode_B2C_JWT(token_version, token, rsa_key)
+                return await f(*args, **kwargs)
+            except AuthError as auth_err:
+                fastapi.Response(content=auth_err.error_msg, status_code=auth_err.status_code)
         return fastapi.Response(content="Invalid header error: Unable to find appropriate key", status_code=401)
     return decorated
 
