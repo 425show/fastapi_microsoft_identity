@@ -24,7 +24,7 @@ def test_auth_header_has_token():
     request = Request
     request.headers = headers_with_auth
     token = auth_service.get_token_auth_header(request)
-    assert token != None, "Retrieve token from auth header!"
+    assert token != None, "Retrieved token from auth header successfully!"
 
 def test_auth_header_is_missing():
     headers_with_no_auth = MultiDict([("Content-Type", "application/json")])
@@ -64,3 +64,19 @@ def test_can_find_application_role_but_is_wrong():
     with pytest.raises(AuthError) as e:
         auth_service.validate_scope(expected_scope,request)
     assert "IDW10203" in e.value.error_msg
+
+def test_can_retrieve_user_token_claims():
+    headers_with_auth = MultiDict([("Authorization", f'Bearer {user_token}'), ("Content-Type", "application/json")])
+    request = Request
+    request.headers = headers_with_auth
+    claims = auth_service.get_token_claims(request)
+    assert claims != None, "Retrieved token claims successfully!"
+
+def test_can_retrieve_application_token_claims():
+    headers_with_auth = MultiDict([("Authorization", f'Bearer {application_token}'), ("Content-Type", "application/json")])
+    request = Request
+    request.headers = headers_with_auth
+    claims = auth_service.get_token_claims(request)
+    assert claims != None, "Retrieved token claims successfully!"
+
+
