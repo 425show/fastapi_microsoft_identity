@@ -2,5 +2,4 @@ fastapi
 httpx
 requests
 python-jose
-pytest
 multidict

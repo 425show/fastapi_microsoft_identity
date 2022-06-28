@@ -29,6 +29,7 @@ setup(
     long_description_content_type="text/markdown",
 
     packages=find_packages(exclude=('tests',)),
+    package_data={"fastapi_microsoft_identity": ["py.typed"]},
 
     install_requires=requires_list,
 
