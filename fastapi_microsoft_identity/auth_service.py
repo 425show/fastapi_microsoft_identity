@@ -1,3 +1,5 @@
+from typing import Any, Callable, Optional, TypeVar
+
 import httpx
 from httpx import Response
 from fastapi import Request
@@ -10,11 +12,13 @@ client_id=None
 b2c_policy_name = None
 b2c_domain_name = None
 
+F = TypeVar('F', bound=Callable[..., Any])
+
 def initialize(
-    tenant_id_, 
-    client_id_,
-    b2c_policy_name_=None, 
-    b2c_domain_name_=None):
+    tenant_id_: str,
+    client_id_: str,
+    b2c_policy_name_: Optional[str] = None,
+    b2c_domain_name_: Optional[str] = None) -> None:
     global tenant_id, client_id, b2c_policy_name, b2c_domain_name
     tenant_id = tenant_id_
     client_id = client_id_
@@ -85,7 +89,7 @@ def validate_scope(required_scope:str, request: Request):
         raise AuthError(f'IDW10203: The "scope" or "scp" claim does not contain scopes {required_scope} or was not found', 403) 
         
 
-def requires_auth(f):
+def requires_auth(f: F) -> Callable[[F], F]:
     @wraps(f)
     async def decorated(*args, **kwargs):
         try:
@@ -121,7 +125,7 @@ def requires_auth(f):
         return fastapi.Response(content="Invalid header error: Unable to find appropriate key", status_code=401)
     return decorated
 
-def requires_b2c_auth(f):
+def requires_b2c_auth(f: F) -> Callable[[F], F]:
     @wraps(f)
     async def decorated(*args, **kwargs):
         try:
