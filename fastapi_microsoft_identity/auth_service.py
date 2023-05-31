@@ -9,17 +9,20 @@ tenant_id=None
 client_id=None
 b2c_policy_name = None
 b2c_domain_name = None
+multitenant = False
 
 def initialize(
     tenant_id_, 
     client_id_,
     b2c_policy_name_=None, 
-    b2c_domain_name_=None):
-    global tenant_id, client_id, b2c_policy_name, b2c_domain_name
+    b2c_domain_name_=None, **kwargs):
+    global tenant_id, client_id, b2c_policy_name, b2c_domain_name, multitenant
     tenant_id = tenant_id_
     client_id = client_id_
     b2c_policy_name = b2c_policy_name_
     b2c_domain_name = b2c_domain_name_
+    multitenant = kwargs.get('multitenant') or False
+
 
 class AuthError(Exception):
     def __init__(self, error_msg:str, status_code:int):
@@ -91,12 +94,10 @@ def requires_auth(f):
         try:
             token = get_token_auth_header(kwargs["request"])
             url = f'https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys'
-            
             async with httpx.AsyncClient() as client:
                 resp: Response = await client.get(url)
                 if resp.status_code != 200:
                     raise AuthError("Problem with Azure AD discovery URL", status_code=404)
-
                 jwks = resp.json()
                 unverified_header = jwt.get_unverified_header(token)
                 rsa_key = {}
@@ -109,7 +110,7 @@ def requires_auth(f):
                             "n": key["n"],
                             "e": key["e"]
                         }
-        except Exception:
+        except Exception as e:
             return fastapi.Response(content="Invalid_header: Unable to parse authentication", status_code= 401)
         if rsa_key:
             try :
@@ -117,9 +118,10 @@ def requires_auth(f):
                 __decode_JWT(token_version, token, rsa_key)
                 return await f(*args, **kwargs)
             except AuthError as auth_err:
-                fastapi.Response(content=auth_err.error_msg, status_code=auth_err.status_code)
+                return fastapi.Response(content=auth_err.error_msg, status_code=auth_err.status_code)
         return fastapi.Response(content="Invalid header error: Unable to find appropriate key", status_code=401)
     return decorated
+
 
 def requires_b2c_auth(f):
     @wraps(f)
@@ -163,13 +165,21 @@ def __decode_B2C_JWT(token_version, token, rsa_key):
     else:
         _issuer = f'https://{b2c_domain_name}.b2clogin.com/{tenant_id}/v2.0'.lower()
     try:
-        payload = jwt.decode(
-            token,
-            rsa_key,
-            algorithms=["RS256"],
-            audience=client_id,
-            issuer=_issuer
-        )
+        if multitenant:
+            payload = jwt.decode(
+                token,
+                rsa_key,
+                algorithms=["RS256"],
+                audience=client_id
+            )
+        else:
+            payload = jwt.decode(
+                token,
+                rsa_key,
+                algorithms=["RS256"],
+                audience=client_id,
+                issuer=_issuer
+            )
     except jwt.ExpiredSignatureError:
         raise AuthError("Token error: The token has expired", 401)
     except jwt.JWTClaimsError:
@@ -185,13 +195,21 @@ def __decode_JWT(token_version, token, rsa_key):
         _issuer = f'https://login.microsoftonline.com/{tenant_id}/v2.0'
         _audience=f'{client_id}'
     try:
-        payload = jwt.decode(
-            token,
-            rsa_key,
-            algorithms=["RS256"],
-            audience=_audience,
-            issuer=_issuer
-        )
+        if multitenant:
+            payload = jwt.decode(
+                token,
+                rsa_key,
+                algorithms=["RS256"],
+                audience=_audience
+            )
+        else:
+            payload = jwt.decode(
+                token,
+                rsa_key,
+                algorithms=["RS256"],
+                audience=_audience,
+                issuer=_issuer
+            )
     except jwt.ExpiredSignatureError:
         raise AuthError("Token error: The token has expired", 401)
     except jwt.JWTClaimsError:
