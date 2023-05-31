@@ -1,23 +1,30 @@
 # Sample Test passing with nose and pytest
 import pytest
-from fastapi import Request
+from fastapi import Request, Response
 import sys
 import os
+
 
 container_folder = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..'
 ))
 sys.path.insert(0, container_folder)
 
-from fastapi_microsoft_identity import auth_service, AuthError
+from fastapi_microsoft_identity import auth_service, AuthError, requires_auth
 from multidict import MultiDict
+
+client_id = os.environ.get('CLIENT_ID') or "66ba9476-0700-4178-81ea-fbeb7097c28e"
+tenant_id = os.environ.get('TENANT_ID') or "de2656e6-585f-4684-8e65-3ce50a7770a8"
 
 user_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Imk2bEdrM0ZaenhSY1ViMkMzbkVRN3N5SEpsWSJ9.eyJhdWQiOiI2ZTc0MTcyYi1iZTU2LTQ4NDMtOWZmNC1lNjZhMzliYjEyZTMiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vNzJmOTg4YmYtODZmMS00MWFmLTkxYWItMmQ3Y2QwMTFkYjQ3L3YyLjAiLCJpYXQiOjE1MzcyMzEwNDgsIm5iZiI6MTUzNzIzMTA0OCwiZXhwIjoxNTM3MjM0OTQ4LCJhaW8iOiJBWFFBaS84SUFBQUF0QWFaTG8zQ2hNaWY2S09udHRSQjdlQnE0L0RjY1F6amNKR3hQWXkvQzNqRGFOR3hYZDZ3TklJVkdSZ2hOUm53SjFsT2NBbk5aY2p2a295ckZ4Q3R0djMzMTQwUmlvT0ZKNGJDQ0dWdW9DYWcxdU9UVDIyMjIyZ0h3TFBZUS91Zjc5UVgrMEtJaWpkcm1wNjlSY3R6bVE9PSIsImF6cCI6IjZlNzQxNzJiLWJlNTYtNDg0My05ZmY0LWU2NmEzOWJiMTJlMyIsImF6cGFjciI6IjAiLCJuYW1lIjoiQWJlIExpbmNvbG4iLCJvaWQiOiI2OTAyMjJiZS1mZjFhLTRkNTYtYWJkMS03ZTRmN2QzOGU0NzQiLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJhYmVsaUBtaWNyb3NvZnQuY29tIiwicmgiOiJJIiwic2NwIjoiYWNjZXNzX2FzX3VzZXIiLCJzdWIiOiJIS1pwZmFIeVdhZGVPb3VZbGl0anJJLUtmZlRtMjIyWDVyclYzeERxZktRIiwidGlkIjoiNzJmOTg4YmYtODZmMS00MWFmLTkxYWItMmQ3Y2QwMTFkYjQ3IiwidXRpIjoiZnFpQnFYTFBqMGVRYTgyUy1JWUZBQSIsInZlciI6IjIuMCJ9.pj4N-w_3Us9DrBLfpCt"
 application_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6Ik1yNS1BVWliZkJpaTdOZDFqQmViYXhib1hXMCJ9.eyJhdWQiOiJkZTI2NTZlNi01ODVmLTQ2ODQtOGU2NS0zY2U1MGE3NzcwYTgiLCJpc3MiOiJodHRwczovL2xvZ2luLm1pY3Jvc29mdG9ubGluZS5jb20vNjZiYTk0NzYtMDcwMC00MTc4LTgxZWEtZmJlYjcwOTdjMjhlL3YyLjAiLCJpYXQiOjE2NDYxNjc1NzIsIm5iZiI6MTY0NjE2NzU3MiwiZXhwIjoxNjQ2MTcxNDcyLCJhaW8iOiJFMlpnWVBoN2RoSFBLNGNuOFE1TUFob01CenAwQVE9PSIsImF6cCI6ImY3NTllY2FiLWM0NWUtNDVlZS1hYWZmLWJlMzJhZmM3ZGU5YiIsImF6cGFjciI6IjEiLCJvaWQiOiIyMTJkOGM2ZS05YzdmLTQ4MWEtOGZkOC1kOTllMzVhOWNiMWMiLCJyaCI6IjAuQVZBQWRwUzZaZ0FIZUVHQjZ2dnJjSmZDanVaV0p0NWZXSVJHam1VODVRcDNjS2hfQUFBLiIsInJvbGVzIjpbImFwcC53ZWF0aGVyLnJlYWQiXSwic3ViIjoiMjEyZDhjNmUtOWM3Zi00ODFhLThmZDgtZDk5ZTM1YTljYjFjIiwidGlkIjoiNjZiYTk0NzYtMDcwMC00MTc4LTgxZWEtZmJlYjcwOTdjMjhlIiwidXRpIjoiX1lYOWhSbElvMGVwX2c3bk9KeXpBUSIsInZlciI6IjIuMCJ9.omq5Abe7rObD_-NDZ64KB3hf3pfCOCS4Sk3cz-jA_4cd49zwzq7wOI8CtXq5vhLUpbwRGCGiZqG-WYmTrTmDwNn2KcsEL8SQkKK5FCOriit8PrDVBAbidAAZsp8OgchhuNBdzp4wUUB7X3cQPk2g6XVOchqvw6MJZVFxi8r5Kqxq8AMJJlHO-ijUX5qKRcrIHkhezFjtGs-TV1dgdpGshKcWhpA635ehRFigY0Hry6vyYaPuiwufp2iMXJ1ZT6ZHqFIE_HeQNLTo39zV5CzVQ4UHH9gDMHfqSbEEO79JyZfNF_HjH40fmvj5HKA8nOEL_LG7fFy3p4BPiVAeUqeUvw"
+my_user_token = os.environ.get("USER_TOKEN")
 
 auth_service.initialize(
-    "66ba9476-0700-4178-81ea-fbeb7097c28e", 
-    "de2656e6-585f-4684-8e65-3ce50a7770a8")
+    tenant_id,
+    client_id,
+    multitenant=True
+    )
 
 def test_auth_header_has_token():
     headers_with_auth = MultiDict([("Authorization", f'Bearer {user_token}'), ("Content-Type", "application/json")])
@@ -80,3 +87,36 @@ def test_can_retrieve_application_token_claims():
     assert claims != None, "Retrieved token claims successfully!"
 
 
+@pytest.mark.asyncio
+async def test_requires_auth_decorator():
+    headers_with_auth = MultiDict([("Authorization", f'Bearer {my_user_token}'), ("Content-Type", "application/json")])
+    request = Request
+    request.headers = headers_with_auth
+    
+    # a dummy function that is to be decorated
+    async def test_func(request: Request)-> str:
+        return "test"
+    
+    result = requires_auth(test_func)
+    response = await result(request=request)
+    if isinstance(response, Response):
+        print(f"auth resulted in {response.body}")
+    assert response == "test", "Requires auth decorator works!"
+
+
+@pytest.mark.asyncio
+async def test_can_find_user_but_from_different_tenant():
+    other_tenant_token = os.environ.get("OTHER_TENANT_TOKEN")
+    headers_with_auth = MultiDict([("Authorization", f'Bearer {other_tenant_token}'), ("Content-Type", "application/json")])
+    request = Request
+    request.headers = headers_with_auth
+
+    # a dummy function that is to be decorated
+    async def test_func(request: Request)-> str:
+        return "test"
+
+    result = requires_auth(test_func)
+    response = await result(request=request)
+    if isinstance(response, Response):
+        print(f"auth resulted in {response.body}")
+    assert response == "test", "Requires auth decorator works!"
