@@ -15,7 +15,7 @@ Prerequisites
 -------------
 - An Azure Active Directory [Get one FREE](https://aka.ms/425Show/devenv)
 - Or an Azure Active Directory B2C, through a FREE Azure subscription [Get your Free sub](https://azure.microsoft.com/free)
-- Python 3.6 or later
+- Python 3.11 or later
 
 Usage
 -------------
@@ -81,10 +81,37 @@ The `validate_scope` method will throw an `AuthError` (HTTP 403) if the token do
 ### 1.3 Accessing the token claims
 Based on user feedback, the library now provides a helper function to access the token claims.
 
+Inside an endpoint protected by `requires_auth` / `requires_b2c_auth`, the **verified** claims are available on the request:
+
+```python
+token_claims = request.state.token_claims
 ```
-token_claims = authservice.get_token_claims(request)
-# do something with the claims
+
+`get_token_claims(request)` is also available, but it returns the claims **without** verifying the token, so only use it on protected endpoints.
+
+### 1.4 Validating one of several scopes
+
+`validate_scope` accepts a single scope or a list. The check passes if the token has any of them, either as a delegated scope (`scp`) or as an app role (`roles`):
+
+```python
+validate_scope(["access_as_user", "app.weather.read"], request)
 ```
+
+### 1.5 Multi-tenant applications
+
+To accept tokens from any Azure AD tenant, pass `multitenant=True`. Signing keys come from the `common` endpoint. The issuer is still validated against the token's own `tid` claim, so you can restrict access to specific tenants with `allowed_tenants`:
+
+```python
+initialize(tenant_id, client_id, multitenant=True, allowed_tenants=["<tenant-guid>", "<tenant-guid>"])
+```
+
+### 1.6 How validation works
+
+- Tokens must be RS256-signed by a key from the tenant's JWKS endpoint, and must include valid `exp`, `aud` and `iss` claims. `nbf` is checked when it's present.
+- The accepted audiences are `<client_id>` and `api://<client_id>`.
+- Signing keys are cached for an hour by default (`initialize(..., jwks_cache_ttl=3600)`). A token with an unknown `kid` triggers a refresh, so key rollover is picked up, but at most once a minute.
+- The protected endpoint must declare a `request: Request` parameter. Both `async def` and regular `def` endpoints work.
+- Failures return `401` with a `WWW-Authenticate: Bearer` header, or `503` if the signing keys can't be retrieved.
 
 ## 2. Azure AD B2C Authentication
 
@@ -115,6 +142,8 @@ In your FastAPI application, you need to initialize the authentication library u
 - `Domain Name`
 - `Sign up & Sign In User Flow`
 
+The issuer and signing keys are read from the user flow's OpenID Connect metadata (`https://<domain>.b2clogin.com/<domain>.onmicrosoft.com/<policy>/v2.0/.well-known/openid-configuration`).
+
 You need to make sure that both your Fast API and the API clients use the same B2C User flow to authenticate and acquire tokens.
 
 You can read more about Azure AD User Flows and Policies [here](https://docs.microsoft.com/en-us/azure/active-directory-b2c/user-flow-overview)
@@ -122,10 +151,10 @@ You can read more about Azure AD User Flows and Policies [here](https://docs.mic
 ```
 initialize(tenant_id, client_id, b2c_policy_name, b2c_domain_name)
 ```
-You can now decorate any API endpoint with the `requires_auth` decorator as per the example below
+You can now decorate any API endpoint with the `requires_b2c_auth` decorator as per the example below
 
 ```
-from fastapi_microsoft_identity import requires_auth, validate_scope, AuthError
+from fastapi_microsoft_identity import requires_b2c_auth, validate_scope, AuthError
 
 expected_scope = "<your expected scope e.g access_as_user>"
 
@@ -161,7 +190,15 @@ If neither is present, the method throws an `AuthError` (HTTP 403) for the follo
 
 Compatibility
 -------------
-Requires Python 3.x
+Requires Python 3.11+. Version 0.2.0 replaced `python-jose` with `PyJWT`. The public API is unchanged.
+
+Development
+-------------
+```
+pip install -e ".[dev]"
+pytest
+```
+The tests sign tokens with a locally generated key, so they don't need network access or real Azure tokens.
 
 Licence
 -------------
