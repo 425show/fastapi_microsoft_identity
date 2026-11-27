@@ -1,4 +1,4 @@
-"""Microsoft Entra ID / Azure AD B2C bearer token validation for FastAPI."""
+"""Microsoft Entra ID / External ID / Azure AD B2C bearer token validation for FastAPI."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ tenant_id: str | None = None
 client_id: str | None = None
 b2c_policy_name: str | None = None
 b2c_domain_name: str | None = None
+external_id_host: str | None = None
 multitenant: bool = False
 allowed_tenants: set[str] | None = None
 jwks_cache_ttl: int = 3600
@@ -43,6 +44,7 @@ def initialize(
     multitenant: bool = False,
     allowed_tenants: Iterable[str] | None = None,
     jwks_cache_ttl: int = 3600,
+    external_id_domain: str | None = None,
 ) -> None:
     """Configure the library.
 
@@ -53,7 +55,10 @@ def initialize(
     :param multitenant: Accept tokens issued by any Microsoft Entra ID tenant. The issuer is still
         validated against the token's own ``tid`` claim.
     :param allowed_tenants: Optional allow-list of tenant IDs when ``multitenant`` is set.
-    :param jwks_cache_ttl: Seconds to cache signing keys and B2C metadata.
+    :param jwks_cache_ttl: Seconds to cache signing keys and OpenID metadata.
+    :param external_id_domain: Microsoft Entra External ID tenant subdomain (``contoso`` for
+        ``contoso.ciamlogin.com``), or a full host name such as ``contoso.ciamlogin.com`` or a
+        custom URL domain like ``login.contoso.com`` (External ID only).
     """
     global tenant_id, client_id, b2c_policy_name, b2c_domain_name
     tenant_id = tenant_id_
@@ -63,7 +68,17 @@ def initialize(
     globals()["multitenant"] = bool(multitenant)
     globals()["allowed_tenants"] = {t.lower() for t in allowed_tenants} if allowed_tenants else None
     globals()["jwks_cache_ttl"] = int(jwks_cache_ttl)
+    globals()["external_id_host"] = _external_id_host(external_id_domain)
     clear_cache()
+
+
+def _external_id_host(domain: str | None) -> str | None:
+    if not domain:
+        return None
+    host = domain.strip().lower().removeprefix("https://").rstrip("/")
+    if not host or "/" in host or not re.fullmatch(r"[a-z0-9.-]+", host):
+        raise ValueError(f"Invalid external_id_domain: {domain!r}")
+    return host if "." in host else f"{host}.ciamlogin.com"
 
 
 def clear_cache() -> None:
@@ -244,20 +259,35 @@ async def _verify_aad_token(token: str) -> dict[str, Any]:
     return _decode(token, key, [client_id, f"api://{client_id}"], issuer)
 
 
-async def _verify_b2c_token(token: str) -> dict[str, Any]:
-    _require_configured(client_id, b2c_domain_name, b2c_policy_name)
+async def _verify_with_metadata(token: str, metadata_url: str, audience: list[str] | str) -> dict[str, Any]:
+    """Validate a token against the issuer and signing keys from OpenID Connect metadata."""
     kid = _unverified_kid(token)
-    metadata_url = (
-        f"https://{b2c_domain_name}.b2clogin.com/{b2c_domain_name}.onmicrosoft.com/"
-        f"{b2c_policy_name}/v2.0/.well-known/openid-configuration"
-    )
     metadata = await _get_metadata(metadata_url)
     issuer = metadata.get("issuer")
     jwks_uri = metadata.get("jwks_uri")
     if not issuer or not jwks_uri:
         raise AuthError("Unable to retrieve signing keys from the identity provider", 503)
     key = await _get_signing_key(jwks_uri, kid)
-    return _decode(token, key, client_id, issuer)
+    return _decode(token, key, audience, issuer)
+
+
+async def _verify_b2c_token(token: str) -> dict[str, Any]:
+    _require_configured(client_id, b2c_domain_name, b2c_policy_name)
+    metadata_url = (
+        f"https://{b2c_domain_name}.b2clogin.com/{b2c_domain_name}.onmicrosoft.com/"
+        f"{b2c_policy_name}/v2.0/.well-known/openid-configuration"
+    )
+    return await _verify_with_metadata(token, metadata_url, client_id)
+
+
+async def _verify_external_id_token(token: str) -> dict[str, Any]:
+    _require_configured(client_id, tenant_id, external_id_host)
+    metadata_url = f"https://{external_id_host}/{tenant_id}/v2.0/.well-known/openid-configuration"
+    claims = await _verify_with_metadata(token, metadata_url, [client_id, f"api://{client_id}"])
+    token_tenant = claims.get("tid")
+    if token_tenant is not None and str(token_tenant).lower() != str(tenant_id).lower():
+        raise AuthError("Token error: Please check the audience and issuer", 401)
+    return claims
 
 
 def _find_request(args: tuple, kwargs: dict) -> Request | None:
@@ -305,3 +335,8 @@ requires_auth.__doc__ = "Require a valid Microsoft Entra ID bearer token. The en
 
 requires_b2c_auth = _make_decorator(_verify_b2c_token)
 requires_b2c_auth.__doc__ = "Require a valid Azure AD B2C bearer token. The endpoint must take a ``Request`` parameter."
+
+requires_external_id_auth = _make_decorator(_verify_external_id_token)
+requires_external_id_auth.__doc__ = (
+    "Require a valid Microsoft Entra External ID bearer token. The endpoint must take a ``Request`` parameter."
+)

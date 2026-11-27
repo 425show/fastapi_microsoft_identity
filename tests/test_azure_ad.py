@@ -4,7 +4,17 @@ import pytest
 
 from fastapi_microsoft_identity import AuthError, auth_service, get_token_claims, validate_scope
 
-from conftest import B2C_DOMAIN, B2C_POLICY, CLIENT_ID, OTHER_TENANT_ID, TENANT_ID, make_request
+from conftest import (
+    B2C_DOMAIN,
+    B2C_POLICY,
+    CLIENT_ID,
+    EXT_CUSTOM_DOMAIN,
+    EXT_SUBDOMAIN,
+    OTHER_TENANT_ID,
+    TENANT_ID,
+    ext_issuer,
+    make_request,
+)
 
 
 def bearer(token):
@@ -240,3 +250,65 @@ def test_b2c_wrong_audience(client, make_token, fetch_log, b2c_config):
 
 def test_b2c_not_configured(client, make_token, fetch_log):
     assert client.get("/b2c", headers=bearer(make_token())).status_code == 500
+
+
+# ----------------------------------------------------------------- Entra External ID
+
+@pytest.fixture
+def ext_config():
+    auth_service.initialize(TENANT_ID, CLIENT_ID, external_id_domain=EXT_SUBDOMAIN)
+
+
+def test_external_id_valid_token(client, make_token, fetch_log, ext_config):
+    r = client.get("/ext", headers=bearer(make_token(iss=ext_issuer(), sub="user-1")))
+    assert r.status_code == 200
+    assert r.json() == {"sub": "user-1"}
+    assert fetch_log[0] == f"https://{EXT_SUBDOMAIN}.ciamlogin.com/{TENANT_ID}/v2.0/.well-known/openid-configuration"
+
+
+def test_external_id_app_id_uri_audience(client, make_token, fetch_log, ext_config):
+    token = make_token(iss=ext_issuer(), aud=f"api://{CLIENT_ID}")
+    assert client.get("/ext", headers=bearer(token)).status_code == 200
+
+
+def test_external_id_custom_domain(client, make_token, fetch_log):
+    auth_service.initialize(TENANT_ID, CLIENT_ID, external_id_domain=f"https://{EXT_CUSTOM_DOMAIN}/")
+    assert client.get("/ext", headers=bearer(make_token(iss=ext_issuer()))).status_code == 200
+    assert fetch_log[0].startswith(f"https://{EXT_CUSTOM_DOMAIN}/")
+
+
+def test_external_id_rejects_workforce_token(client, make_token, fetch_log, ext_config):
+    # a regular Entra ID token (login.microsoftonline.com issuer) must not pass
+    assert client.get("/ext", headers=bearer(make_token())).status_code == 401
+
+
+def test_external_id_wrong_audience(client, make_token, fetch_log, ext_config):
+    token = make_token(iss=ext_issuer(), aud="someone-else")
+    assert client.get("/ext", headers=bearer(token)).status_code == 401
+
+
+def test_external_id_tenant_mismatch(client, make_token, fetch_log, ext_config):
+    token = make_token(iss=ext_issuer(), tid=OTHER_TENANT_ID)
+    assert client.get("/ext", headers=bearer(token)).status_code == 401
+
+
+def test_external_id_expired(client, make_token, fetch_log, ext_config):
+    now = int(time.time())
+    token = make_token(iss=ext_issuer(), exp=now - 10, iat=now - 3600, nbf=now - 3600)
+    r = client.get("/ext", headers=bearer(token))
+    assert r.status_code == 401
+    assert "expired" in r.text
+
+
+def test_external_id_not_configured(client, make_token, fetch_log):
+    assert client.get("/ext", headers=bearer(make_token(iss=ext_issuer()))).status_code == 500
+
+
+def test_external_id_token_rejected_by_requires_auth(client, make_token, fetch_log, ext_config):
+    assert client.get("/aad", headers=bearer(make_token(iss=ext_issuer()))).status_code == 401
+
+
+@pytest.mark.parametrize("bad", ["contoso.ciamlogin.com/extra", "con toso", "evil.com@x"])
+def test_external_id_invalid_domain(bad):
+    with pytest.raises(ValueError):
+        auth_service.initialize(TENANT_ID, CLIENT_ID, external_id_domain=bad)

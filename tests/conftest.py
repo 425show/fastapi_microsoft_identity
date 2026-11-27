@@ -16,6 +16,12 @@ CLIENT_ID = "de2656e6-585f-4684-8e65-3ce50a7770a8"
 KID = "test-key-1"
 B2C_DOMAIN = "contosob2c"
 B2C_POLICY = "B2C_1_signupsignin"
+EXT_SUBDOMAIN = "contosoext"
+EXT_CUSTOM_DOMAIN = "login.contoso.com"
+
+
+def ext_issuer() -> str:
+    return f"https://{TENANT_ID}.ciamlogin.com/{TENANT_ID}/v2.0"
 
 
 def _b64(n: int) -> str:
@@ -53,6 +59,16 @@ def fetch_log(monkeypatch, jwks):
             "jwks_uri": b2c_jwks_uri,
         },
         b2c_jwks_uri: jwks,
+        f"https://{EXT_SUBDOMAIN}.ciamlogin.com/{TENANT_ID}/v2.0/.well-known/openid-configuration": {
+            "issuer": ext_issuer(),
+            "jwks_uri": f"https://{EXT_SUBDOMAIN}.ciamlogin.com/{TENANT_ID}/discovery/v2.0/keys",
+        },
+        f"https://{EXT_SUBDOMAIN}.ciamlogin.com/{TENANT_ID}/discovery/v2.0/keys": jwks,
+        f"https://{EXT_CUSTOM_DOMAIN}/{TENANT_ID}/v2.0/.well-known/openid-configuration": {
+            "issuer": ext_issuer(),
+            "jwks_uri": f"https://{EXT_CUSTOM_DOMAIN}/{TENANT_ID}/discovery/v2.0/keys",
+        },
+        f"https://{EXT_CUSTOM_DOMAIN}/{TENANT_ID}/discovery/v2.0/keys": jwks,
     }
 
     async def fake_fetch(url):
@@ -108,7 +124,13 @@ def make_request(headers: dict) -> Request:
 def client():
     from fastapi import FastAPI
 
-    from fastapi_microsoft_identity import AuthError, requires_auth, requires_b2c_auth, validate_scope
+    from fastapi_microsoft_identity import (
+        AuthError,
+        requires_auth,
+        requires_b2c_auth,
+        requires_external_id_auth,
+        validate_scope,
+    )
 
     app = FastAPI()
 
@@ -135,6 +157,11 @@ def client():
     @requires_b2c_auth
     async def b2c(request: Request):
         return {"ok": True}
+
+    @app.get("/ext")
+    @requires_external_id_auth
+    async def ext(request: Request):
+        return {"sub": request.state.token_claims.get("sub")}
 
     @app.get("/no-request")
     @requires_auth

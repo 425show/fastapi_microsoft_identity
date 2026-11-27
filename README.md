@@ -2,7 +2,7 @@ FastAPI authentication with Microsoft Identity
 ==========================
 
 
-The Microsoft Identity library for Python's FastAPI provides [Microsoft Entra ID](https://learn.microsoft.com/entra/fundamentals/whatis) (formerly Azure Active Directory) and Azure AD B2C token authentication and authorization through a set of convenience functions. It lets FastAPI applications validate JWT access tokens and API permissions issued by Microsoft Entra ID or Azure AD B2C.
+The Microsoft Identity library for Python's FastAPI provides [Microsoft Entra ID](https://learn.microsoft.com/entra/fundamentals/whatis) (formerly Azure Active Directory), [Microsoft Entra External ID](https://learn.microsoft.com/entra/external-id/customers/overview-customers-ciam) and Azure AD B2C token authentication and authorization through a set of convenience functions. It lets FastAPI applications validate JWT access tokens and API permissions issued by any of them.
 
 Install the package
 -------------
@@ -14,6 +14,7 @@ pip install fastapi-microsoft-identity
 Prerequisites
 -------------
 - A Microsoft Entra ID tenant. A free one comes with the [Microsoft 365 Developer Program](https://developer.microsoft.com/microsoft-365/dev-program) or a [free Azure account](https://azure.microsoft.com/free)
+- Or a Microsoft Entra External ID tenant, for customer-facing apps (see [section 3](#3-microsoft-entra-external-id-authentication))
 - Or an existing Azure AD B2C tenant (see the [note in section 2](#2-azure-ad-b2c-authentication))
 - Python 3.11 or later
 
@@ -21,7 +22,7 @@ Usage
 -------------
 
 ## 1. Microsoft Entra ID Authentication
-The library supports both Microsoft Entra ID and Azure AD B2C authentication for FastAPI applications. Azure Active Directory (Azure AD) was renamed to Microsoft Entra ID in 2023. Only the name changed: the endpoints (`login.microsoftonline.com`), tokens and app registrations are the same, so nothing in your configuration needs to change.
+The library supports Microsoft Entra ID, Microsoft Entra External ID and Azure AD B2C authentication for FastAPI applications. Azure Active Directory (Azure AD) was renamed to Microsoft Entra ID in 2023. Only the name changed: the endpoints (`login.microsoftonline.com`), tokens and app registrations are the same, so nothing in your configuration needs to change.
 
 ### 1.1 Microsoft Entra ID App Registration Configuration
 First create an `App registration` in the Microsoft Entra admin center using the following steps:
@@ -115,7 +116,7 @@ initialize(tenant_id, client_id, multitenant=True, allowed_tenants=["<tenant-gui
 
 ## 2. Azure AD B2C Authentication
 
-> **Note:** Azure AD B2C kept its name in the Entra rebrand. Since May 2025 Microsoft no longer sells it to new customers, but existing tenants remain supported. For new customer-facing apps Microsoft recommends [Microsoft Entra External ID](https://learn.microsoft.com/entra/external-id/customers/overview-customers-ciam), which this library doesn't support yet.
+> **Note:** Azure AD B2C kept its name in the Entra rebrand. Since May 2025 Microsoft no longer sells it to new customers, but existing tenants remain supported. For new customer-facing apps Microsoft recommends Microsoft Entra External ID, which this library supports too: see [section 3](#3-microsoft-entra-external-id-authentication).
 
 ### 2.1 Create your Azure AD B2C Application Registration
 
@@ -190,9 +191,49 @@ If neither is present, the method throws an `AuthError` (HTTP 403) for the follo
 2. the token doesn't contain the right scope / api permission
 
 
+## 3. Microsoft Entra External ID Authentication
+
+[Microsoft Entra External ID](https://learn.microsoft.com/entra/external-id/customers/overview-customers-ciam) is Microsoft's identity service for customer-facing apps and the successor to Azure AD B2C. Its tenants sign users in at `<subdomain>.ciamlogin.com`.
+
+### 3.1 Register your API in the External ID tenant
+
+1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com) and switch to your external tenant.
+2. Navigate to **Entra ID** -> `App registrations` -> `New registration`, give the API a name, and click `Register`.
+3. Copy the `Application (client) ID` and `Directory (tenant) ID` from the **Overview** page.
+4. Navigate to `Expose an API`, set the **Application ID URI**, and add a scope such as `access_as_user`.
+5. Note the tenant's subdomain: for `contoso.onmicrosoft.com` the sign-in host is `contoso.ciamlogin.com`, so the subdomain is `contoso`.
+6. Make sure the API issues v2.0 access tokens: in the app registration's `Manifest`, set `requestedAccessTokenVersion` (shown as `accessTokenAcceptedVersion` in older manifests) to `2`.
+
+### 3.2 Using the library with External ID
+
+Pass the tenant ID, client ID and `external_id_domain` to `initialize`, then protect endpoints with `requires_external_id_auth`:
+
+```python
+import fastapi
+from fastapi import Request
+from fastapi_microsoft_identity import initialize, requires_external_id_auth, validate_scope, AuthError
+
+initialize(tenant_id, client_id, external_id_domain="contoso")
+
+@router.get("/api/orders")
+@requires_external_id_auth
+async def orders(request: Request):
+    try:
+        validate_scope("access_as_user", request)
+    except AuthError as ae:
+        return fastapi.Response(content=ae.error_msg, status_code=ae.status_code)
+    customer_id = request.state.token_claims["sub"]
+    ...
+```
+
+`external_id_domain` accepts the subdomain (`contoso`), the full host (`contoso.ciamlogin.com`), or a [custom URL domain](https://learn.microsoft.com/entra/external-id/customers/how-to-custom-url-domain) such as `login.contoso.com`.
+
+The issuer and signing keys are read from the tenant's OpenID Connect metadata (`https://<host>/<tenant_id>/v2.0/.well-known/openid-configuration`). The token's audience must be `<client_id>` or `api://<client_id>`, and its `tid` claim must match your tenant. Tokens from regular Entra ID tenants are rejected, and External ID tokens are rejected by `requires_auth`.
+
+
 Compatibility
 -------------
-Requires Python 3.11+. Version 0.2.0 replaced `python-jose` with `PyJWT`. The public API is unchanged.
+Requires Python 3.11+. Version 0.2.0 replaced `python-jose` with `PyJWT`. The public API is unchanged. Version 0.2.1 added Microsoft Entra External ID support.
 
 Development
 -------------
