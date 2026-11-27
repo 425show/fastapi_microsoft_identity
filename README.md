@@ -2,7 +2,7 @@ FastAPI authentication with Microsoft Identity
 ==========================
 
 
-The Microsoft Identity library for Python's FastAPI provides [Azure Active Directory](https://docs.microsoft.com/azure/active-directory/fundamentals/active-directory-whatis) token authentication and authorization through a set of convenience functions. It enables any FastAPI applications to authenticate with Azure AD to validate JWT tokens and API permissions 
+The Microsoft Identity library for Python's FastAPI provides [Microsoft Entra ID](https://learn.microsoft.com/entra/fundamentals/whatis) (formerly Azure Active Directory) and Azure AD B2C token authentication and authorization through a set of convenience functions. It lets FastAPI applications validate JWT access tokens and API permissions issued by Microsoft Entra ID or Azure AD B2C.
 
 Install the package
 -------------
@@ -13,25 +13,25 @@ pip install fastapi-microsoft-identity
 
 Prerequisites
 -------------
-- An Azure Active Directory [Get one FREE](https://aka.ms/425Show/devenv)
-- Or an Azure Active Directory B2C, through a FREE Azure subscription [Get your Free sub](https://azure.microsoft.com/free)
+- A Microsoft Entra ID tenant. A free one comes with the [Microsoft 365 Developer Program](https://developer.microsoft.com/microsoft-365/dev-program) or a [free Azure account](https://azure.microsoft.com/free)
+- Or an existing Azure AD B2C tenant (see the [note in section 2](#2-azure-ad-b2c-authentication))
 - Python 3.11 or later
 
 Usage
 -------------
 
-## 1. Azure AD Authentication
-The library can now support both Azure AD and Azure AD B2C authentication for FastAPI applications
+## 1. Microsoft Entra ID Authentication
+The library supports both Microsoft Entra ID and Azure AD B2C authentication for FastAPI applications. Azure Active Directory (Azure AD) was renamed to Microsoft Entra ID in 2023. Only the name changed: the endpoints (`login.microsoftonline.com`), tokens and app registrations are the same, so nothing in your configuration needs to change.
 
-### 1.1 Azure AD App Registration Configuration
-First create an Azure Active Directory `Application Registration` in the Azure AD portal using the following steps:
-1. Sign in to your Azure AD Tenant ([link](aad.portal.azure.com)) 
-2. Navigate to `App Registrations` -> `New Registration`.
+### 1.1 Microsoft Entra ID App Registration Configuration
+First create an `App registration` in the Microsoft Entra admin center using the following steps:
+1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com).
+2. Navigate to **Entra ID** -> `App registrations` -> `New registration`.
 3. Enter a name for your application.
 4. Leave everything else as default.
 5. Click `Register`.
-6. Copy the `Client ID` and `Tenant ID` from the `Application Registration` **Overview** page.
-7. Navigate to the `Expose API` tab.
+6. Copy the `Application (client) ID` and `Directory (tenant) ID` from the app registration's **Overview** page.
+7. Navigate to the `Expose an API` tab.
 8. Click `Set` next to the **Application ID URI** field.
 9. Click **Add a scope**
     - Give the scope a name like `access_as_user`.
@@ -44,7 +44,7 @@ The scope should look like this:
 `api://279cfdb1-0000-0000-0000-291dcd4b561a/access_as_user`
 
 ### 1.2 Using the Microsoft Identity for FastAPI library
-In your FastAPI application, you need to initialize the authentication library using the `Client ID` and `Tenant ID` values from the `Application Registration` **Overview** page.
+In your FastAPI application, you need to initialize the authentication library using the `Application (client) ID` and `Directory (tenant) ID` values from the app registration's **Overview** page.
 
 ```
 initialize(tenant_id, client_id)
@@ -99,7 +99,7 @@ validate_scope(["access_as_user", "app.weather.read"], request)
 
 ### 1.5 Multi-tenant applications
 
-To accept tokens from any Azure AD tenant, pass `multitenant=True`. Signing keys come from the `common` endpoint. The issuer is still validated against the token's own `tid` claim, so you can restrict access to specific tenants with `allowed_tenants`:
+To accept tokens from any Microsoft Entra ID tenant, pass `multitenant=True`. Signing keys come from the `common` endpoint. The issuer is still validated against the token's own `tid` claim, so you can restrict access to specific tenants with `allowed_tenants`:
 
 ```python
 initialize(tenant_id, client_id, multitenant=True, allowed_tenants=["<tenant-guid>", "<tenant-guid>"])
@@ -115,6 +115,8 @@ initialize(tenant_id, client_id, multitenant=True, allowed_tenants=["<tenant-gui
 
 ## 2. Azure AD B2C Authentication
 
+> **Note:** Azure AD B2C kept its name in the Entra rebrand. Since May 2025 Microsoft no longer sells it to new customers, but existing tenants remain supported. For new customer-facing apps Microsoft recommends [Microsoft Entra External ID](https://learn.microsoft.com/entra/external-id/customers/overview-customers-ciam), which this library doesn't support yet.
+
 ### 2.1 Create your Azure AD B2C Application Registration
 
 First create an Azure AD B2C `App Registration` in the B2C portal using the following steps:
@@ -124,21 +126,21 @@ First create an Azure AD B2C `App Registration` in the B2C portal using the foll
 4. Under `Supported account types` choose **Accounts in any identity provider or organizational directory(for authenticating user with user flows)**.
 5. Make sure the **Grant admin consent to openid and offline_access** is checked. under `Permissions`
 6. Click `Register`.
-7. Copy the `Client ID` and `Tenant ID` from the `App Registration` **Overview** page.
-8. Navigate to the `Expose API` tab.
+7. Copy the `Application (client) ID` and `Directory (tenant) ID` from the app registration's **Overview** page.
+8. Navigate to the `Expose an API` tab.
 9. Click `Set` next to the **Application ID URI** field.
 10. Click **Add a scope**
     - Give the scope a name like `access_as_user`.
     - Provide meaningful descriptions for the admin consent name and description
     - Ensure `State` is set to **Enabled**
     - Client **Add scope**
-11. From the B2C overview pane, copy the domaain name like this `<your-tenant>` ignoring the `.onmicrosoft.com.`. eg. cmatb2cdev
+11. From the B2C overview pane, copy the domain name like this `<your-tenant>`, leaving out `.onmicrosoft.com`, e.g. `cmatb2cdev`
 
 ### 2.2 Using the Microsoft Identity for FastAPI library with Azure AD B2C
 
 In your FastAPI application, you need to initialize the authentication library using the following values:
-- `Client ID` 
-- `Tenant ID` 
+- `Application (client) ID`
+- `Directory (tenant) ID`
 - `Domain Name`
 - `Sign up & Sign In User Flow`
 
@@ -146,7 +148,7 @@ The issuer and signing keys are read from the user flow's OpenID Connect metadat
 
 You need to make sure that both your Fast API and the API clients use the same B2C User flow to authenticate and acquire tokens.
 
-You can read more about Azure AD User Flows and Policies [here](https://docs.microsoft.com/en-us/azure/active-directory-b2c/user-flow-overview)
+You can read more about Azure AD B2C user flows and policies [here](https://learn.microsoft.com/azure/active-directory-b2c/user-flow-overview)
 
 ```
 initialize(tenant_id, client_id, b2c_policy_name, b2c_domain_name)
@@ -198,7 +200,7 @@ Development
 pip install -e ".[dev]"
 pytest
 ```
-The tests sign tokens with a locally generated key, so they don't need network access or real Azure tokens.
+The tests sign tokens with a locally generated key, so they don't need network access or real Microsoft Entra ID tokens.
 
 Licence
 -------------

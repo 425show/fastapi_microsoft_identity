@@ -1,4 +1,4 @@
-"""Azure AD / Azure AD B2C bearer token validation for FastAPI."""
+"""Microsoft Entra ID / Azure AD B2C bearer token validation for FastAPI."""
 
 from __future__ import annotations
 
@@ -46,11 +46,11 @@ def initialize(
 ) -> None:
     """Configure the library.
 
-    :param tenant_id_: Azure AD tenant ID (ignored for signing keys when ``multitenant`` is set).
+    :param tenant_id_: Microsoft Entra ID tenant ID (ignored for signing keys when ``multitenant`` is set).
     :param client_id_: The API's application (client) ID; tokens must be issued for this audience.
     :param b2c_policy_name_: B2C user flow / policy name (B2C only).
     :param b2c_domain_name_: B2C tenant name without ``.onmicrosoft.com`` (B2C only).
-    :param multitenant: Accept tokens issued by any Azure AD tenant. The issuer is still
+    :param multitenant: Accept tokens issued by any Microsoft Entra ID tenant. The issuer is still
         validated against the token's own ``tid`` claim.
     :param allowed_tenants: Optional allow-list of tenant IDs when ``multitenant`` is set.
     :param jwks_cache_ttl: Seconds to cache signing keys and B2C metadata.
@@ -301,7 +301,7 @@ def _make_decorator(verify):
 
 
 requires_auth = _make_decorator(_verify_aad_token)
-requires_auth.__doc__ = "Require a valid Azure AD bearer token. The endpoint must take a ``Request`` parameter."
+requires_auth.__doc__ = "Require a valid Microsoft Entra ID bearer token. The endpoint must take a ``Request`` parameter."
 
 requires_b2c_auth = _make_decorator(_verify_b2c_token)
 requires_b2c_auth.__doc__ = "Require a valid Azure AD B2C bearer token. The endpoint must take a ``Request`` parameter."

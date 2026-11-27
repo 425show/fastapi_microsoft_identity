@@ -1,4 +1,4 @@
-"""fastapi_microsoft_identity - Azure AD authentication for Fast API"""
+"""fastapi_microsoft_identity - Microsoft Entra ID (formerly Azure AD) authentication for FastAPI"""
 
 __version__ = "0.2.0"
 __author__ = "Christos Matskas <christos.matskas@microsoft.com>"
